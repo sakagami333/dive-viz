@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dive Log Visualizer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0d1b2a;
+      color: #d4e0ec;
+      min-height: 100vh;
+    }
+
+    /* ---- ヘッダー ---- */
+    header {
+      background: linear-gradient(135deg, #0a2a4a 0%, #0e4d7a 100%);
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid #1a4060;
+    }
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #7fd4ff;
+    }
+    header h1 span { color: #fff; }
+    #updated-at {
+      font-size: 0.75rem;
+      color: #7a9ab5;
+      margin-top: 4px;
+    }
+
+    /* ---- サマリーカード ---- */
+    .summary-grid {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 16px 24px;
+      background: #0e2035;
+    }
+    .stat-card {
+      flex: 1 1 120px;
+      background: #112840;
+      border: 1px solid #1a4060;
+      border-radius: 8px;
+      padding: 12px 16px;
+      text-align: center;
+    }
+    .stat-card .label {
+      font-size: 0.7rem;
+      color: #7a9ab5;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .stat-card .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #5bcaff;
+    }
+    .stat-card .sub { font-size: 0.75rem; color: #a0b8cc; margin-top: 2px; }
+
+    /* ---- タブ ---- */
+    .tabs {
+      display: flex;
+      background: #0a1e30;
+      border-bottom: 1px solid #1a4060;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: #7a9ab5;
+      padding: 12px 22px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      border-bottom: 3px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: #d4e0ec; }
+    .tab-btn.active { color: #5bcaff; border-bottom-color: #5bcaff; }
+
+    /* ---- タブコンテンツ ---- */
+    .tab-pane { display: none; padding: 20px 24px; }
+    .tab-pane.active { display: block; }
+
+    /* ---- 状態表示 ---- */
+    #loading {
+      text-align: center;
+      padding: 48px;
+      color: #7a9ab5;
+      font-size: 1.1rem;
+    }
+    #error-msg {
+      display: none;
+      background: #3a1515;
+      border: 1px solid #a03030;
+      border-radius: 6px;
+      padding: 16px;
+      color: #ff9090;
+      margin: 16px 24px;
+    }
+
+    /* ---- ダイブ一覧 ---- */
+    #search-input {
+      width: 100%;
+      max-width: 400px;
+      background: #112840;
+      border: 1px solid #1a4060;
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: #d4e0ec;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+      outline: none;
+    }
+    #search-input:focus { border-color: #5bcaff; }
+
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    th {
+      background: #112840;
+      color: #7a9ab5;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      padding: 10px 12px;
+      text-align: left;
+      white-space: nowrap;
+      border-bottom: 1px solid #1a4060;
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #0e2035;
+      vertical-align: middle;
+    }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.site-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tbody tr { cursor: pointer; transition: background 0.1s; }
+    tbody tr:hover { background: #112840; }
+    tbody tr:hover td { color: #fff; }
+
+    /* ---- プロファイル ---- */
+    #profile-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #7fd4ff;
+      margin-bottom: 8px;
+    }
+    #profile-meta {
+      font-size: 0.82rem;
+      color: #9ab8cc;
+      margin-bottom: 14px;
+      line-height: 1.8;
+    }
+    #profile-canvas {
+      width: 100%;
+      background: #071520;
+      border-radius: 8px;
+      border: 1px solid #1a4060;
+      display: block;
+    }
+    .legend {
+      display: flex;
+      gap: 20px;
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: #7a9ab5;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-line { width: 24px; height: 3px; border-radius: 2px; }
+    .profile-placeholder {
+      text-align: center;
+      color: #4a6a80;
+      padding: 60px 0;
+      font-size: 0.95rem;
+    }
+
+    /* ---- 統計 ---- */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .chart-card {
+      background: #071520;
+      border: 1px solid #1a4060;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    canvas.chart {
+      width: 100%;
+      display: block;
+      background: transparent;
+    }
+
+    /* ---- 地図 ---- */
+    #map {
+      width: 100%;
+      height: 480px;
+      border-radius: 8px;
+      border: 1px solid #1a4060;
+    }
+
+    /* ---- ノート ---- */
+    .notes {
+      display: block;
+      margin-top: 4px;
+      font-style: italic;
+      color: #7a9ab5;
+    }
+
+    @media (max-width: 600px) {
+      header { padding: 14px 16px; }
+      .summary-grid { padding: 12px 16px; }
+      .tab-pane { padding: 14px 16px; }
+      .stat-card .value { font-size: 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🤿 <span>Dive Log</span> Visualizer</h1>
+  <div id="updated-at"></div>
+</header>
+
+<div class="summary-grid">
+  <div class="stat-card">
+    <div class="label">総ダイブ数</div>
+    <div class="value" id="stat-total">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">総潜水時間</div>
+    <div class="value" id="stat-time">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">最大深度</div>
+    <div class="value" id="stat-maxdepth">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">ダイブサイト数</div>
+    <div class="value" id="stat-sites">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">活動期間</div>
+    <div class="value" style="font-size:1rem" id="stat-period">—</div>
+  </div>
+</div>
+
+<div id="error-msg"></div>
+<div id="loading">データを読み込み中...</div>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="list">ダイブ一覧</button>
+  <button class="tab-btn" data-tab="profile">深度プロファイル</button>
+  <button class="tab-btn" data-tab="stats">統計</button>
+  <button class="tab-btn" data-tab="map">地図</button>
+</nav>
+
+<!-- ダイブ一覧 -->
+<section class="tab-pane active" id="tab-list">
+  <input id="search-input" type="search" placeholder="サイト名・タグ・メモで絞り込み…">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>日付</th>
+          <th>ポイント</th>
+          <th>最大深度</th>
+          <th>潜水時間</th>
+          <th>水温</th>
+          <th>評価</th>
+        </tr>
+      </thead>
+      <tbody id="dive-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 深度プロファイル -->
+<section class="tab-pane" id="tab-profile">
+  <div id="profile-title">一覧からダイブをクリックしてください</div>
+  <div id="profile-meta"></div>
+  <canvas id="profile-canvas"></canvas>
+  <div class="legend">
+    <span class="legend-item">
+      <span class="legend-line" style="background:#5bf"></span>深度
+    </span>
+    <span class="legend-item">
+      <span class="legend-line" style="background:#fa0; border-top: 2px dashed #fa0; height:0"></span>水温（あれば）
+    </span>
+  </div>
+</section>
+
+<!-- 統計 -->
+<section class="tab-pane" id="tab-stats">
+  <div class="charts-grid">
+    <div class="chart-card">
+      <canvas id="chart-year" class="chart"></canvas>
+    </div>
+    <div class="chart-card">
+      <canvas id="chart-month" class="chart"></canvas>
+    </div>
+    <div class="chart-card">
+      <canvas id="chart-depth" class="chart"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- 地図 -->
+<section class="tab-pane" id="tab-map">
+  <div id="map"></div>
+</section>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/charts.js"></script>
+</body>
+</html>
